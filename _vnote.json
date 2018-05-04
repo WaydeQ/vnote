@@ -1,0 +1,38 @@
+{
+    "attachment_folder": "_v_attachments",
+    "created_time": "2018-05-04T01:59:42Z",
+    "files": [
+    ],
+    "image_folder": "",
+    "recycle_bin_folder": "_v_recycle_bin",
+    "sub_directories": [
+        {
+            "name": "linekong"
+        },
+        {
+            "name": "docker"
+        },
+        {
+            "name": "kubernetes"
+        },
+        {
+            "name": "ha"
+        },
+        {
+            "name": "web"
+        },
+        {
+            "name": "系统"
+        },
+        {
+            "name": "命令"
+        },
+        {
+            "name": "监控"
+        },
+        {
+            "name": "硬件"
+        }
+    ],
+    "version": "1"
+}
