@@ -1,1 +1,19 @@
 # git
+
+- 添加github地址
+```
+git  add .
+git commit -am 'first commit'
+git remote add origin git@github.com:runtuwuqi/vnote.git
+git push -u  origin master
+git commit -am 'add'
+push
+```
+
+- 修改github地址
+```
+git remote set-url origin git@github.com:WaydeQ/vnote.git
+git  add .
+git commit -am 'add'
+git push
+```
