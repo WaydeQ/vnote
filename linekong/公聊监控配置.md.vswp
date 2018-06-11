@@ -1,0 +1,22 @@
+vnote_backup_file_826537664 F:/文档/Qbook/linekong/公聊监控配置.md
+# 公聊监控配置
+- 1. echatmonitor数据库,sys_game_rel表添加游戏信息
+![g1](_v_images/_g1_1528700392_18374.png)
+
+- 2. 运行建表函数
+![g2](_v_images/_g2_1528700428_11904.png)
+
+- 3.确认erating配置，game.config
+![g3](_v_images/_g3_1528700447_32254.png)
+
+#### 查看游戏聊天消息是否发到erating
+```
+/data/erating_mmmyz/eRating/5011/mmmyz/log
+grep -i chat *  
+```
+
+- 没有询问游戏是否
+CMD_ROLE_CHAT_MONITOR 已接入
+
+
+

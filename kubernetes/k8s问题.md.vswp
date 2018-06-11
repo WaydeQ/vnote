@@ -1,0 +1,13 @@
+vnote_backup_file_826537664 F:/文档/Qbook/kubernetes/k8s问题.md
+# k8s问题
+
+##### 启动node时错误：
+```
+error: failed to run Kubelet: unable to load bootstrap kubeconfig: invalid configuration: no configuration has been provided 
+```
+
+##### 排查：
+1. 是否关闭了swap，方法，注释掉 /etc/fstab中 swap的一行。然后运行命令 ：swapoff -a
+2. 检索 /etct/kubernetes/ssl/token.csv文件中的随机数与同目录下的bootstrap.kuebeconfig中的随机数是否一致，这个检查要所有的节点上进行检查。
+3. 如果是虚拟机可能有两块网卡的情况，那就要检查/lib/systemd/system/flanneld.service.文件中的iface是否进行正确的设置，这个网卡应该是你集群真正使用的几个结点间互通的网卡。
+4. 总之，看日志是最有效的，一定要把/var/log/messages及时输出，并过滤出error或faild记录，来查看错误信息。

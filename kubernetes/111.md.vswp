@@ -1,0 +1,921 @@
+vnote_backup_file_826537664 F:/文档/Qbook/kubernetes/111.md
+# 111
+
+# 介绍
+`kubeadm` 是一个`kubernetes`官方提供的快速安装和初始化拥有最佳实践的`kubernetes`集群工具。目前还不能用于生产环境，但是可以通过学习这种部署方法来体会`kubernetes`最佳实践的设计和思想。
+
+## 系统环境介绍
+ip           | hostname |role        | spec
+------------ | ----------- | ---|---------------------------------
+172.16.3.201 | kube-node01 | master and etcd |ubuntu1-16.04-adm64 2 core 4G 40G
+172.16.3.202 | kube-node02 | master and etcd | ubuntu1-16.04-adm64 2 core 4G 40G
+172.16.3.203 | kube-node03 | master and etcd | ubuntu1-16.04-adm64 2 core 4G 40G
+172.16.3.204 | kube-node04 | node                  | ubuntu1-16.04-adm64 2 core 4G 40G
+
+
+## 软件版本
+
+- docker               v18.03.1-ce
+- socat                 v1.7.3.1
+- kubelet              v1.10.2
+- kubernetes-cni  v1.10.2
+- kubectl              v1.10.2
+- kubeadm           v1.10.2
+
+# 安装
+
+## 初始化
+
+- 设置主机名
+```
+hostnamectl set-hostname kube-01
+hostnamectl set-hostname kube-02
+hostnamectl set-hostname kube-03
+hostnamectl set-hostname kube-04
+```
+
+- 设置主机映射
+```
+172.16.3.201 kube-01
+172.16.3.202 kube-02
+172.16.3.203 kube-03
+172.16.3.204 kube-04
+```
+
+- 在 kube01上配置免密登录
+```
+ssh-copy-id 172.16.3.201
+ssh-copy-id 172.16.3.202
+ssh-copy-id 172.16.3.203
+ssh-copy-id 172.16.3.204
+```
+- 停止防火墙
+```
+systemctl stop firewalld
+systemctl disable firewalld
+```
+- 关闭 swap
+```
+swapoff -a
+sed -i 's/.*swap.*/#&/' /etc/fstab
+```
+
+- 关闭 selinux
+```
+setenforce  0 
+sed -i "s/^SELINUX=enforcing/SELINUX=disabled/g" /etc/sysconfig/selinux 
+sed -i "s/^SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config 
+sed -i "s/^SELINUX=permissive/SELINUX=disabled/g" /etc/sysconfig/selinux 
+sed -i "s/^SELINUX=permissive/SELINUX=disabled/g" /etc/selinux/config 
+```
+
+- 设置内核
+```
+modprobe br_netfilter
+cat <<EOF >  /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+sysctl -p /etc/sysctl.d/k8s.conf
+ls /proc/sys/net/bridge
+```
+
+-  配置安装源
+
+```
+## 系统安装源
+cat << EOF > /etc/apt/sources.list
+deb http://mirrors.aliyun.com/ubuntu/ xenial main restricted
+deb http://mirrors.aliyun.com/ubuntu/ xenial-updates main restricted
+deb http://mirrors.aliyun.com/ubuntu/ xenial universe
+deb http://mirrors.aliyun.com/ubuntu/ xenial-updates universe
+deb http://mirrors.aliyun.com/ubuntu/ xenial multiverse
+deb http://mirrors.aliyun.com/ubuntu/ xenial-updates multiverse
+deb http://mirrors.aliyun.com/ubuntu/ xenial-backports main restricted universe multiverse
+EOF
+
+## kubeadm及kubernetes组件安装源
+cat << EOF > /etc/apt/sources.list.d/kubernetes.list
+deb https://mirrors.aliyun.com/kubernetes/apt kubernetes-xenial main
+deb http://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+## docker 安装源
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+apt-key fingerprint 0EBFCD88
+add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+```
+
+- 配置 ntp
+
+```
+apt install ntpdate
+echo '*/30 * * * * /usr/sbin/ntpdate time7.aliyun.com >/dev/null 2>&1' > /tmp/crontab2.tmp
+crontab /tmp/crontab2.tmp
+```
+
+- 配置 系统参数
+```
+echo "* soft nofile 65536" >> /etc/security/limits.conf
+echo "* hard nofile 65536" >> /etc/security/limits.conf
+echo "* soft nproc 65536"  >> /etc/security/limits.conf
+echo "* hard nproc 65536"  >> /etc/security/limits.conf
+echo "* soft  memlock  unlimited"  >> /etc/security/limits.conf
+echo "* hard memlock  unlimited"  >> /etc/security/limits.conf
+```
+
+##  keepalived
+
+### 安装 
+
+```
+## 三个master 节点上执行
+apt install -y keepalived 
+```
+
+### 配置
+
+- kube-01
+```
+cat <<EOF > /etc/keepalived/keepalived.conf
+global_defs {
+   router_id LVS_k8s
+}
+
+vrrp_script CheckK8sMaster {
+    script "curl -k https://172.16.3.200:6443"
+    interval 3
+    timeout 9
+    fall 2
+    rise 2
+}
+
+vrrp_instance VI_1 {
+    state MASTER
+    interface ens3
+    virtual_router_id 61
+    priority 100
+    advert_int 1
+    mcast_src_ip 172.16.3.201
+    nopreempt
+    authentication {
+        auth_type PASS
+        auth_pass k8s
+    }
+    unicast_peer {
+        172.16.3.202
+        172.16.3.203
+    }
+    virtual_ipaddress {
+        172.16.3.200
+    }
+    track_script {
+        CheckK8sMaster
+    }
+
+}
+EOF
+```
+
+### 启动 
+
+```
+systemctl restart keepalived
+```
+
+##  etcd
+
+### 配置 cfssl 环境
+
+- 下载工具
+- 
+```
+wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+chmod +x cfssl_linux-amd64
+mv cfssl_linux-amd64 /usr/local/bin/cfssl
+
+wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+chmod +x cfssljson_linux-amd64
+mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
+
+wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+chmod +x cfssl-certinfo_linux-amd64
+mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
+```
+-   验证安装
+```
+cfssl version
+Version: 1.2.0
+Revision: dev
+Runtime: go1.6
+```
+- 生成模版
+```
+mkdir ssl
+cd ssl
+cfssl print-defaults config > config.json
+cfssl print-defaults csr > csr.json
+```
+
+### 签发证书
+
+-  CA 配置文件
+```
+cat > ca-config.json << EOF 
+{
+    "signing":{
+        "default":{
+            "expiry":"8760h"
+        },
+        "profiles":{
+            "kubernetes":{
+                "usages":[
+                    "signing",
+                    "key encipherment",
+                    "server auth",
+                    "client auth"
+                ],
+                "expiry":"8760h"
+            }
+        }
+    }
+}
+EOF
+```
+
+- CA 证书签名请求
+
+```
+cat > ca-csr.json <<EOF
+{
+    "CN":"kubernetes",
+    "key":{
+        "algo":"rsa",
+        "size":2048
+    },
+    "names":[
+        {
+            "C":"CN",
+            "ST":"BeiJing",
+            "L":"BeiJing",
+            "O":"k8s",
+            "OU":"System"
+        }
+    ]
+}
+EOF
+```
+
+- 生成证书和私钥
+```
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+2018/05/15 17:07:28 [INFO] generating a new CA key and certificate from CSR
+2018/05/15 17:07:28 [INFO] generate received request
+2018/05/15 17:07:28 [INFO] received CSR
+2018/05/15 17:07:28 [INFO] generating key: rsa-2048
+2018/05/15 17:07:28 [INFO] encoded CSR
+2018/05/15 17:07:28 [INFO] signed certificate with serial number 605473372501057180676906682488764995702703144336
+```
+
+- 创建 etcd 证书签名请求
+```
+cat > etcd-csr.json << EOF
+{
+    "CN":"etcd",
+    "hosts":[
+        "127.0.0.1",
+        "172.16.3.201",
+        "172.16.3.202",
+        "172.16.3.203"
+    ],
+    "key":{
+        "algo":"rsa",
+        "size":2048
+    },
+    "names":[
+        {
+            "C":"CN",
+            "ST":"BeiJing",
+            "L":"BeiJing",
+            "O":"k8s",
+            "OU":"System"
+        }
+    ]
+}
+EOF
+```
+- 生成 etcd 证书和私钥
+
+```
+cfssl gencert -ca=ca.pem \
+-ca-key=ca-key.pem \
+-config=ca-config.json \
+-profile=kubernetes etcd-csr.json | cfssljson -bare etcd
+```
+
+- 分发证书到其他节点
+```
+mkdir -p /etc/etcd/ssl
+cp etcd.pem etcd-key.pem ca.pem /etc/etcd/ssl/
+rsync -azvH /etc/etcd 172.16.3.202:/etc/
+rsync -azvH /etc/etcd 172.16.3.203:/etc/
+```
+
+### 安装 etcd
+
+- 下载二进制文件
+```
+wget https://github.com/coreos/etcd/releases/download/v3.3.4/etcd-v3.3.4-linux-amd64.tar.gz
+tar zxf etcd-v3.3.4-linux-amd64.tar.gz
+mv etcd-v3.3.4-linux-amd64/etcd* /usr/local/bin/
+mkdir -p /var/lib/etcd
+```
+
+- 创建 etcd 的 systemd unit 文件
+
+```
+# kube-01 为例
+cat/etc/systemd/system/etcd.service
+
+[Unit]
+Description=Etcd Server
+After=network.target
+After=network-online.target
+Wants=network-online.target
+Documentation=https://github.com/coreos
+
+[Service]
+Type=notify
+WorkingDirectory=/var/lib/etcd/
+ExecStart=/usr/local/bin/etcd \
+--name=kube-01 \
+--cert-file=/etc/etcd/ssl/etcd.pem \
+--key-file=/etc/etcd/ssl/etcd-key.pem \
+--peer-cert-file=/etc/etcd/ssl/etcd.pem \
+--peer-key-file=/etc/etcd/ssl/etcd-key.pem \
+--trusted-ca-file=/etc/etcd/ssl/ca.pem \
+--peer-trusted-ca-file=/etc/etcd/ssl/ca.pem \
+--initial-advertise-peer-urls=https://172.16.3.201:2380 \
+--listen-peer-urls=https://172.16.3.201:2380 \
+--listen-client-urls=https://172.16.3.201:2379,http://127.0.0.1:2379 \
+--advertise-client-urls=https://172.16.3.201:2379 \
+--initial-cluster-token=etcd-cluster-0 \
+--initial-cluster=kube-01=https://172.16.3.201:2380,kube-02=https://172.16.3.202:2380,kube-03=https://172.16.3.203:2380 \
+--initial-cluster-state=new \
+--data-dir=/var/lib/etcd
+
+Restart=on-failure
+RestartSec=5
+
+LimitNOFILE=65536
+[Install]
+WantedBy=multi-user.target
+```
+
+- 启动 etcd 服务
+
+```
+systemctl daemon-reload
+systemctl enable etcd
+systemctl start etcd
+systemctl status etcd
+```
+
+- 验证服务
+
+```
+ /usr/local/bin/etcdctl \
+--endpoints=https://172.16.3.201:2379,https://172.16.3.202:2379,https://172.16.3.203:2379 \
+--ca-file=/etc/etcd/ssl/ca.pem \
+--cert-file=/etc/etcd/ssl/etcd.pem \
+--key-file=/etc/etcd/ssl/etcd-key.pem cluster-health
+member 9614137182cee21d is healthy: got healthy result from https://172.16.3.203:2379
+member c02873a8512419dc is healthy: got healthy result from https://172.16.3.202:2379
+member d2047fb03705ef86 is healthy: got healthy result from https://172.16.3.201:2379
+cluster is healthy
+
+```
+
+## docker
+
+
+### 安装 docker
+
+```
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+apt-get install -y docker-ce
+```
+
+### 配置docker
+
+- 修改仓库目录
+
+```
+mkdir -p /data/docker
+```
+
+- 修改 docker.service 文件
+```
+vim /lib/systemd/system/docker.service
+ExecStart=/usr/bin/dockerd --graph=/data/docker -H fd://
+```
+
+- 修改docker 配置文件
+```
+tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": ["https://pis7krlh.mirror.aliyuncs.com"]
+}
+EOF
+```
+
+- 启动 docker
+```
+systemctl daemon-reload
+systemctl enable docker
+systemctl start docker
+systemctl status docker
+```
+
+## kubeadm
+
+###  安装核心组件
+
+```
+## 所有节点
+apt-get install -y kubelet kubeadm kubectl kubernetes-cni
+```
+
+### 修改 kubelet 配置文件
+
+```
+## 所有节点
+vim /etc/systemd/system/kubelet.service.d/10-kubeadm.conf 
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+Environment="KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true"
+Environment="KUBELET_NETWORK_ARGS=--network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin"
+Environment="KUBELET_DNS_ARGS=--cluster-dns=10.96.0.10 --cluster-domain=cluster.local"
+Environment="KUBELET_AUTHZ_ARGS=--authorization-mode=Webhook --client-ca-file=/etc/kubernetes/pki/ca.crt"
+Environment="KUBELET_CADVISOR_ARGS=--cadvisor-port=0"
+Environment="KUBELET_CERTIFICATE_ARGS=--rotate-certificates=true --cert-dir=/var/lib/kubelet/pki"
+Environment="KUBELET_EXTRA_ARGS=--v=2 --fail-swap-on=false --pod-infra-container-image=registry.cn-beijing.aliyuncs.com/k8s_images/pause-amd64:3.0"
+Environment="KUBELET_CGROUP_ARGS=--cgroup-driver=cgroupfs"
+ExecStart=
+ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_AUTHZ_ARGS $KUBELET_CADVISOR_ARGS $KUBELET_CERTIFICATE_ARGS $KUBELET_EXTRA_ARGS $KUBELET_CGROUP_ARGS
+```
+### 重新加载配置
+
+```
+systemctl daemon-reload
+systemctl enable kubelet
+```
+
+### 添加命令补全
+
+```
+apt install -y bash-completion
+source /usr/share/bash-completion/bash_completion
+source <(kubectl completion bash)
+echo "source <(kubectl completion bash)" >> ~/.bashrc
+```
+
+#  安装 kubernetes 集群
+
+## 初始化 master 节点
+
+### 集群配置文件
+
+```
+cat <<EOF > config.yaml 
+apiVersion: kubeadm.k8s.io/v1alpha1
+kind: MasterConfiguration
+etcd:
+  endpoints:
+  - https://172.16.3.201:2379
+  - https://172.16.3.202:2379
+  - https://172.16.3.203:2379
+  caFile: /etc/etcd/ssl/ca.pem
+  certFile: /etc/etcd/ssl/etcd.pem
+  keyFile: /etc/etcd/ssl/etcd-key.pem
+  dataDir: /var/lib/etcd
+networking:
+  podSubnet: 10.244.0.0/16
+kubernetesVersion: 1.10.2
+api:
+  advertiseAddress: "172.16.3.200"
+token: "b99a00.a144ef80536d4344"
+tokenTTL: "0s"
+apiServerCertSANs:
+- kube-01
+- kube-02
+- kube-03
+- 172.16.3.200
+- 172.16.3.201
+- 172.16.3.202
+- 172.16.3.203
+- 172.16.3.204
+featureGates:
+  CoreDNS: true
+imageRepository: "registry.cn-beijing.aliyuncs.com/k8s_images"
+EOF
+```
+
+###  初始化集群
+
+```
+kubeadm init --config config.yaml 
+```
+
+- 配置文件定义的 podnetwok 是 10.244.0.0/16，service 默认的网段是 10.96.0.0/12 
+- 初始化失败后可以使用 `kubeadm reset` 
+
+初始化正常结果如下
+```
+Your Kubernetes master has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of machines by running the following on each node
+as root:
+
+  kubeadm join 172.16.3.200:6443 --token b99a00.a144ef80536d4344 --discovery-token-ca-cert-hash sha256:d6c181aeded4e51f9a4afd41dc84b9fa964d7481b66030e5d2b50446f904a6c2
+```
+
+### 配置环境
+
+```
+mkdir -p $HOME/.kube
+cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+### 分发证书到其他节点
+
+```
+scp -r /etc/kubernetes/pki kube-02:/etc/kubernetes/
+scp -r /etc/kubernetes/pki kube-03:/etc/kubernetes/
+```
+
+### 在其他节点执行初始化
+
+```
+kubeadm init --config config.yaml 
+mkdir -p $HOME/.kube
+cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+
+## 部署 flannel 网络
+
+
+在一个 master 节点执行即可
+
+### 下载配置文件
+
+
+```
+wget https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+```
+
+###  创建服务
+
+```
+kubectl create -f  kube-flannel.yml
+clusterrole.rbac.authorization.k8s.io "flannel" created
+clusterrolebinding.rbac.authorization.k8s.io "flannel" created
+serviceaccount "flannel" created
+configmap "kube-flannel-cfg" created
+daemonset.extensions "kube-flannel-ds" created
+```
+
+### 查看结果
+
+```
+kubectl get node
+NAME      STATUS    ROLES     AGE       VERSION
+kube-01   Ready     master    36m       v1.10.2
+kube-02   Ready     master    13m       v1.10.2
+kube-03   Ready     master    13m       v1.10.2
+```
+
+```
+kubectl   get pods --all-namespaces
+NAMESPACE     NAME                              READY     STATUS    RESTARTS   AGE
+kube-system   coredns-7997f8864c-2f76z          1/1       Running   0          37m
+kube-system   coredns-7997f8864c-g867f          1/1       Running   0          37m
+kube-system   kube-apiserver-kube-01            1/1       Running   0          36m
+kube-system   kube-apiserver-kube-02            1/1       Running   0          14m
+kube-system   kube-apiserver-kube-03            1/1       Running   0          14m
+kube-system   kube-controller-manager-kube-01   1/1       Running   0          36m
+kube-system   kube-controller-manager-kube-02   1/1       Running   0          14m
+kube-system   kube-controller-manager-kube-03   1/1       Running   0          14m
+kube-system   kube-flannel-ds-mt2hk             1/1       Running   0          14m
+kube-system   kube-flannel-ds-pr4ld             1/1       Running   0          14m
+kube-system   kube-flannel-ds-q5x79             1/1       Running   0          24m
+kube-system   kube-proxy-2wlcs                  1/1       Running   0          37m
+kube-system   kube-proxy-9twmb                  1/1       Running   0          14m
+kube-system   kube-proxy-zc7sm                  1/1       Running   0          14m
+kube-system   kube-scheduler-kube-01            1/1       Running   0          36m
+kube-system   kube-scheduler-kube-02            1/1       Running   0          14m
+kube-system   kube-scheduler-kube-03            1/1       Running   0          14m
+```
+
+### 添加kube-04 到集群
+- 加入集群
+
+```
+join 172.16.3.200:6443 --token b99a00.a144ef80536d4344 --discovery-token-ca-cert-hash sha256:d6c181aeded4e51f9a4afd41dc84b9fa964d7481b66030e5d2b50446f904a6c2
+```
+
+- 验证
+
+```
+kubectl get node
+NAME      STATUS    ROLES     AGE       VERSION
+kube-01   Ready     master    2d        v1.10.2
+kube-02   Ready     master    2d        v1.10.2
+kube-03   Ready     master    2d        v1.10.2
+kube-04   Ready     <none>    1m        v1.10.2
+```
+
+## 安装 kubernetes 组件
+
+
+### 部署 dashboard
+
+- 官方文件目录
+
+```
+https://github.com/kubernetes/kubernetes/tree/master/cluster/addons/dashboard
+```
+
+- kubernetes-dashboard.yaml
+```
+# Copyright 2017 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Configuration to deploy release version of the Dashboard UI compatible with
+# Kubernetes 1.8.
+#
+# Example usage: kubectl create -f <this_file>
+
+# ------------------- Dashboard Secret ------------------- #
+
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard-certs
+  namespace: kube-system
+type: Opaque
+
+---
+# ------------------- Dashboard Service Account ------------------- #
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kube-system
+
+---
+# ------------------- Dashboard Role & Role Binding ------------------- #
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kubernetes-dashboard-minimal
+  namespace: kube-system
+rules:
+  # Allow Dashboard to create 'kubernetes-dashboard-key-holder' secret.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+  # Allow Dashboard to create 'kubernetes-dashboard-settings' config map.
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create"]
+  # Allow Dashboard to get, update and delete Dashboard exclusive secrets.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["kubernetes-dashboard-key-holder", "kubernetes-dashboard-certs"]
+  verbs: ["get", "update", "delete"]
+  # Allow Dashboard to get and update 'kubernetes-dashboard-settings' config map.
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["kubernetes-dashboard-settings"]
+  verbs: ["get", "update"]
+  # Allow Dashboard to get metrics from heapster.
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["heapster"]
+  verbs: ["proxy"]
+- apiGroups: [""]
+  resources: ["services/proxy"]
+  resourceNames: ["heapster", "http:heapster:", "https:heapster:"]
+  verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-dashboard-minimal
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard-minimal
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-dashboard
+  namespace: kube-system
+
+---
+# ------------------- Dashboard Deployment ------------------- #
+
+kind: Deployment
+apiVersion: apps/v1beta2
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kube-system
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: kubernetes-dashboard
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      containers:
+      - name: kubernetes-dashboard
+        image: registry.cn-hangzhou.aliyuncs.com/k8sth/kubernetes-dashboard-amd64:v1.8.3
+        ports:
+        - containerPort: 8443
+          protocol: TCP
+        args:
+          - --auto-generate-certificates
+          # Uncomment the following line to manually specify Kubernetes API server Host
+          # If not specified, Dashboard will attempt to auto discover the API server and connect
+          # to it. Uncomment only if the default does not work.
+          # - --apiserver-host=http://my-address:port
+        volumeMounts:
+        - name: kubernetes-dashboard-certs
+          mountPath: /certs
+          # Create on-disk volume to store exec logs
+        - mountPath: /tmp
+          name: tmp-volume
+        livenessProbe:
+          httpGet:
+            scheme: HTTPS
+            path: /
+            port: 8443
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+      volumes:
+      - name: kubernetes-dashboard-certs
+        secret:
+          secretName: kubernetes-dashboard-certs
+      - name: tmp-volume
+        emptyDir: {}
+      serviceAccountName: kubernetes-dashboard
+      # Comment the following tolerations if Dashboard must not be deployed on master
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+
+---
+# ------------------- Dashboard Service ------------------- #
+
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kube-system
+spec:
+  type: NodePort
+  ports:
+    - port: 443
+      targetPort: 8443
+      nodePort: 30000
+  selector:
+    k8s-app: kubernetes-dashboard
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kube-system
+```
+
+- 部署
+
+```
+secret "kubernetes-dashboard-certs" created
+serviceaccount "kubernetes-dashboard" created
+role.rbac.authorization.k8s.io "kubernetes-dashboard-minimal" created
+rolebinding.rbac.authorization.k8s.io "kubernetes-dashboard-minimal" created
+deployment.apps "kubernetes-dashboard" created
+service "kubernetes-dashboard" created
+serviceaccount "admin-user" created
+clusterrolebinding.rbac.authorization.k8s.io "admin-user" created
+```
+
+- 获取 token，通过令牌登录
+
+```
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep admin-user | awk '{print $1}')
+Name:         admin-user-token-zxm6b
+Namespace:    kube-system
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name=admin-user
+              kubernetes.io/service-account.uid=97db69d2-5a6e-11e8-8ed3-5254002e88eb
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1025 bytes
+namespace:  11 bytes
+token:      eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJhZG1pbi11c2VyLXRva2VuLXp4bTZiIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6ImFkbWluLXVzZXIiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiI5N2RiNjlkMi01YTZlLTExZTgtOGVkMy01MjU0MDAyZTg4ZWIiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6a3ViZS1zeXN0ZW06YWRtaW4tdXNlciJ9.dnJxzGihu64bwFCRPhE_FHL08HNdmcXb1AKZ7CteOUj0SY8NZ7adBHEUg-aARQQIp41iEN3nNWPTHA2ToVdch-L-b0ad4R6mc04HSL1NSCAWKp4ftzFSeWlSOUKOTqOXKbkH-E4NFNF2E0VGEMKiOSA0tvkRgjq3pnh16vBtJEgnjG3a8forE-QU6ad9fDOsYAruFwigXz_c9BIqGzul2lxDy82dt1CjaFYpTKdCPPZVX0nXqLwIURaT5b-nYJ5rsjC-6xMnT3p84xftYTrbpMk9sXmpkChd_D8Wx5stnCABeICeJJHVQu5Fa37KriW53syVCotvcAgAs627ed1n9Q
+```
+
+- 访问 dashboard，
+
+```
+https://172.16.3.201:30000/#!/login
+```
+
+###  安装 heapster
+
+- 配置文件（附件）
+
+```
+influxdb:
+grafana.yaml  heapster.yaml  influxdb.yaml
+
+rbac:
+heapster-rbac.yaml
+```
+
+- 部署
+
+```
+ kubectl create -f kube-heapster/influxdb/
+deployment.extensions "monitoring-grafana" created
+service "monitoring-grafana" created
+serviceaccount "heapster" created
+deployment.extensions "heapster" created
+service "heapster" created
+deployment.extensions "monitoring-influxdb" created
+service "monitoring-influxdb" created
+```

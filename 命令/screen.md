@@ -1,0 +1,24 @@
+# screen
+
+### 安装
+```
+yum install screen -y
+```
+
+#### 新建一个窗口
+```
+screen -S yourname
+```
+
+#### 查看窗口
+```
+screen -ls
+There is a screen on:
+        16582.pts-1.tivf06      (Detached)
+1 Socket in /tmp/screens/S-root.
+```
+
+#### 重新连接会话：
+```
+screen -r 16582
+```

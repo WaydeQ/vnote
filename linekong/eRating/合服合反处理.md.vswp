@@ -1,0 +1,9 @@
+vnote_backup_file_826537664 F:/文档/Qbook/linekong/eRating/合服合反处理.md
+# 合服合反处理
+
+1.修改网关状态为1
+
+2.删除sys_gateway_unite表相关数据（是否有重复）
+```
+delete from sys_gateway_unite;
+```

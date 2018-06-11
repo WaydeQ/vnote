@@ -134,14 +134,18 @@ systemctl start xl2tpd
 systemctl enable xl2tpd
 ```
 - 利用 iptable 配置转发规则
+
+- gw.sh
 ```
-gw.sh
 #!/bin/bash
 /sbin/iptables -t nat -F
 /sbin/iptables -t nat -A POSTROUTING -s 10.0.2.0/24 -d 172.16.0.0/16 -o eth1 -j SNAT --to-source 172.16.1.125
 /sbin/iptables -t nat -A POSTROUTING -s 10.0.2.0/24 ! -d 10.0.2.0/24 -o eth0 -j SNAT --to-source ServerIP
 /sbin/iptables -t nat -A POSTROUTING -s 10.0.2.0/24 ! -d 172.16.0.0/16 -o eth0 -j SNAT --to-source ServerIP
-forward.sh
+```
+
+- forward.sh
+```
 // 172.16.3.100 为办公电脑IP
 #!/bin/bash
 /sbin/iptables -F FORWARD
