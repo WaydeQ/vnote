@@ -1,4 +1,4 @@
-# eRating信息查看
+# eRating相关信息查看
 
 #### 查看erating进程
 ```
@@ -6,8 +6,7 @@
 ```
 #### jboss_charge 充值中间件端口
 ```
-grep port /data/jboss_charge/jboss-4.0.2/server/default/deploy/jbossweb-tomcat55.sar/server.xml 
-Connector port="8088"
+grep port /data/jboss_charge/jboss-4.0.2/server/default/deploy/jbossweb-tomcat55.sar/server.xml
 ```
 #### unionCode && chargekey ：
 ```
@@ -18,11 +17,13 @@ cat /data/jboss_charge/jboss-4.0.2/server/default/deploy/linekong-config.xml
 #### platform 端口
 ```
 netstat -nltp |grep platform
+或：
 grep port /home/erating/platform_svr_mysql/platform_svr.conf
 ```
 #### GMSvr 端口
 ```
 netstat -nltp |grep GMSvr2.50
+或：
 grep web_port /data/jboss_gm/gmserver/gmserver/gmserver.ini
 ```
 #### gm端口
@@ -30,22 +31,26 @@ grep web_port /data/jboss_gm/gmserver/gmserver/gmserver.ini
 grep port= /data/jboss_gm/jboss-4.0.2/server/default/deploy/jbossweb-tomcat55.sar/server.xml
      <Connector port="8099" address="${jboss.bind.address}"
 
-find . -type f -name "*" | xargs grep "192.168.30.45" |awk -F ":" '{print $1}'  
 ```
 #### jboss_charge 端口：
 ```
-ps -ef |grep jboss_charge
-netstat -nltp |grep
+grep "Connector port" /data/jboss_charge/jboss-4.0.2/server/default/deploy/jbossweb-tomcat55.sar/server.xml
+      <Connector port="8082" address="${jboss.bind.address}"
+#netstat 确认
+netstat -nltp |grep 8082
+
 ```
 #### jboss_passport 端口
 ```
-grep overseamidUrl /data/jboss_passport/jboss-4.0.2/server/default/deploy/linekong-config.xml 
+grep "Connector port" /data/jboss_passport/jboss-4.0.2/server/default/deploy/jbossweb-tomcat55.sar/server.xml
+netstat -nltp |grep
 ```
 
-### 发出信息
+### 最后发出erating信息
+（以下信息按照实际配置修改）
 ```
 1. gm 登陆地址：
-http://103.53.171.213:8080/etoolkitsweb 
+http://103.53.171.213:8080/etoolkitsweb
 
 2. gm tool 网关url配置：
 103.53.171.213:16625
@@ -64,8 +69,6 @@ port：5001
 platform: 5008
 
 5.gateway信息
-详见附件
+导出erating数据库sys_gateway表数据
 ```
 
-jboss_charge启动报错正常：
-ERROR [org.jboss.deployment.scanner.URLDeploymentScanner] Incomplete Deployment listing:

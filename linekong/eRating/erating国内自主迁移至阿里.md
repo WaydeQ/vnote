@@ -25,3 +25,4 @@ vimdiff 8231/amc/app.conf 8232/amc/app.conf
 
 find . -name 'app.conf' |xargs grep auth_name | awk '{print $2}'| sort|uniq
 ```
+

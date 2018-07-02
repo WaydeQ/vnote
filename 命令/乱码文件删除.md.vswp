@@ -1,4 +1,0 @@
-vnote_backup_file_826537664 F:/文档/Qbook/命令/乱码文件删除.md
-# 乱码文件删除
-
-find -inum 1572869 -exec rm -rf {} \;

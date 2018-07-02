@@ -1,0 +1,10 @@
+vnote_backup_file_826537664 F:/文档/Qbook/linekong/域名解析.md
+# 域名解析
+
+
+C:\Users\wuqi\Desktop\GitServer\salt\salt\base\cn\bind\master\files\zone.d
+
+
+
+# 国内 Bind Master
+salt -G 'role:cn.bindmaster' state.sls cn.bind.master
