@@ -16,6 +16,7 @@ Ctrl+ l 清屏，相当于执行clear命令
 Ctrl+ p 调出命令历史中的前一条（Previous）命令，相当于通常的上箭头
 Ctrl+ n 调出命令历史中的下一条（Next）命令，相当于通常的上箭头
 Ctrl+ r 显示：号提示，根据用户输入查找相关历史命令（reverse-i-search）
+<<<<<<< HEAD
 ```
 
 - 替换
@@ -24,4 +25,6 @@ Ctrl+ r 显示：号提示，根据用户输入查找相关历史命令（revers
 :s/vivian/sky/g 替换当前行所有 vivian 为 sky
 :%s/vivian/sky/（等同于：g/vivian/s//sky/）替换每一行的第一个 vivian 为 sky
 :%s/vivian/sky/g（等同于：g/vivian/s//sky/g）替换每一行中所有 vivian 为 sky
+=======
+>>>>>>> 5789a7766ad25e419d5952f9d84591c6007f79aa
 ```
